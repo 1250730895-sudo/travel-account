@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AA算账 - 旅游记账</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="summary-card">
+      <span class="summary-title">💰 AA 算账结果</span>
+      <div class="summary-stats">
+        <div class="stat-item">
+          <span class="stat-value" id="totalAmount">0.00</span>
+          <span class="stat-label">总消费</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="avgAmount">0.00</span>
+          <span class="stat-label">人均</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value" id="memberCount">0</span>
+          <span class="stat-label">参与人数</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <span class="section-title">个人收支</span>
+      <div id="memberStats"></div>
+    </div>
+
+    <div class="section" id="transferSection" style="display:none;">
+      <span class="section-title">🔄 转账建议</span>
+      <div class="transfer-list" id="transferList"></div>
+    </div>
+
+    <div class="empty" id="emptyState" style="display:none;">
+      <span>🎉 完美 AA，无需转账！</span>
+    </div>
+  </div>
+
+  <nav class="tab-bar">
+    <a href="index.html" class="tab-item">
+      <span>📝</span>
+      <span>账单</span>
+    </a>
+    <a href="statistics.html" class="tab-item">
+      <span>📊</span>
+      <span>统计</span>
+    </a>
+    <a href="aa.html" class="tab-item active">
+      <span>🧮</span>
+      <span>AA</span>
+    </a>
+    <a href="settings.html" class="tab-item">
+      <span>⚙️</span>
+      <span>设置</span>
+    </a>
+  </nav>
+
+  <script src="js/app.js"></script>
+  <script>
+    initData();
+
+    function calculateAA() {
+      const bills = getBills();
+      const members = getMembers();
+
+      if (members.length === 0 || bills.length === 0) {
+        document.getElementById('totalAmount').textContent = '0.00';
+        document.getElementById('avgAmount').textContent = '0.00';
+        document.getElementById('memberCount').textContent = '0';
+        return;
+      }
+
+      const stats = {};
+      const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'];
+
+      members.forEach((m, i) => {
+        stats[m.name] = {
+          name: m.name,
+          color: colors[i % colors.length],
+          paid: 0,
+          shouldPay: 0,
+          paidCount: 0,
+          splitCount: 0
+        };
+      });
+
+      let totalCNY = 0;
+
+      bills.forEach(bill => {
+        const cny = toCNY(bill.amount, bill.currency);
+        totalCNY += cny;
+
+        if (stats[bill.payer]) {
+          stats[bill.payer].paid += cny;
+          stats[bill.payer].paidCount++;
+        }
+
+        const splitMembers = bill.members.length > 0 ? bill.members : [bill.payer];
+        const perPerson = cny / splitMembers.length;
+
+        splitMembers.forEach(name => {
+          if (stats[name]) {
+            stats[name].shouldPay += perPerson;
+            stats[name].splitCount++;
+          }
+        });
+      });
+
+      const avg = totalCNY / members.length;
+
+      const memberStats = Object.values(stats).map(s => ({
+        ...s,
+        paid: s.paid.toFixed(2),
+        shouldPay: s.shouldPay.toFixed(2),
+        balance: (s.paid - s.shouldPay).toFixed(2)
+      })).sort((a, b) => b.balance - a.balance);
+
+      document.getElementById('totalAmount').textContent = totalCNY.toFixed(2);
+      document.getElementById('avgAmount').textContent = avg.toFixed(2);
+      document.getElementById('memberCount').textContent = members.length;
+
+      document.getElementById('memberStats').innerHTML = memberStats.map(m => `
+        <div class="member-card">
+          <div class="member-header">
+            <div class="avatar" style="background:${m.color}">${m.name[0]}</div>
+            <div class="member-info">
+              <span class="member-name">${m.name}</span>
+              <span class="member-detail">付了 ${m.paidCount} 笔，分摊 ${m.splitCount} 笔</span>
+            </div>
+            <span class="balance ${parseFloat(m.balance) >= 0 ? 'positive' : 'negative'}">
+              ${parseFloat(m.balance) >= 0 ? '+' : ''}${m.balance}
+            </span>
+          </div>
+          <div class="member-detail-row">
+            <span>实际支付：¥${m.paid}</span>
+            <span>应分摊：¥${m.shouldPay}</span>
+          </div>
+        </div>
+      `).join('');
+
+      // 计算转账
+      const debtors = memberStats.filter(m => parseFloat(m.balance) < -0.01).map(m => ({
+        name: m.name,
+        color: m.color,
+        amount: -parseFloat(m.balance)
+      }));
+
+      const creditors = memberStats.filter(m => parseFloat(m.balance) > 0.01).map(m => ({
+        name: m.name,
+        color: m.color,
+        amount: parseFloat(m.balance)
+      }));
+
+      const transfers = [];
+      while (debtors.length > 0 && creditors.length > 0) {
+        const debtor = debtors[0];
+        const creditor = creditors[0];
+        const amount = Math.min(debtor.amount, creditor.amount);
+
+        transfers.push({
+          from: debtor.name,
+          fromColor: debtor.color,
+          to: creditor.name,
+          toColor: creditor.color,
+          amount: amount.toFixed(2)
+        });
+
+        debtor.amount -= amount;
+        creditor.amount -= amount;
+        if (debtor.amount < 0.01) debtors.shift();
+        if (creditor.amount < 0.01) creditors.shift();
+      }
+
+      if (transfers.length > 0) {
+        document.getElementById('transferSection').style.display = 'block';
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('transferList').innerHTML = transfers.map(t => `
+          <div class="transfer-item">
+            <div class="transfer-from">
+              <span class="avatar small" style="background:${t.fromColor}">${t.from[0]}</span>
+              <span>${t.from}</span>
+            </div>
+            <div class="transfer-arrow">
+              <span class="amount">¥${t.amount}</span>
+              <span style="font-size:20px; color:#999;">→</span>
+            </div>
+            <div class="transfer-to">
+              <span class="avatar small" style="background:${t.toColor}">${t.to[0]}</span>
+              <span>${t.to}</span>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        document.getElementById('transferSection').style.display = 'none';
+        document.getElementById('emptyState').style.display = 'block';
+      }
+    }
+
+    calculateAA();
+  </script>
+</body>
+</html>

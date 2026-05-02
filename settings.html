@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>设置 - 旅游记账</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="form-card">
+      <span class="section-title">旅行信息</span>
+      <div class="input-list">
+        <div class="input-item">
+          <label>旅行名称</label>
+          <input type="text" id="tripName" placeholder="例如：日本之旅">
+        </div>
+        <div class="input-item">
+          <label>旅行日期</label>
+          <input type="text" id="tripDate" placeholder="例如：2026.04.01-04.07">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <span class="section-title">基础币种</span>
+      <div class="currency-list" id="currencyList"></div>
+    </div>
+
+    <div class="form-card">
+      <div class="section-header">
+        <span class="section-title">同行成员</span>
+        <span class="add-btn" onclick="addMember()">+ 添加</span>
+      </div>
+      <div class="member-list" id="memberList"></div>
+    </div>
+
+    <button class="save-btn" onclick="saveSettings()">保存设置</button>
+
+    <div class="danger-zone">
+      <button class="danger-btn" onclick="clearData()">清空所有数据</button>
+    </div>
+  </div>
+
+  <nav class="tab-bar">
+    <a href="index.html" class="tab-item">
+      <span>📝</span>
+      <span>账单</span>
+    </a>
+    <a href="statistics.html" class="tab-item">
+      <span>📊</span>
+      <span>统计</span>
+    </a>
+    <a href="aa.html" class="tab-item">
+      <span>🧮</span>
+      <span>AA</span>
+    </a>
+    <a href="settings.html" class="tab-item active">
+      <span>⚙️</span>
+      <span>设置</span>
+    </a>
+  </nav>
+
+  <script src="js/app.js"></script>
+  <script>
+    initData();
+
+    const currencies = [
+      { code: 'CNY', name: '人民币', symbol: '¥' },
+      { code: 'USD', name: '美元', symbol: '$' },
+      { code: 'EUR', name: '欧元', symbol: '€' },
+      { code: 'JPY', name: '日元', symbol: '¥' },
+      { code: 'HKD', name: '港币', symbol: 'HK$' },
+      { code: 'KRW', name: '韩元', symbol: '₩' },
+      { code: 'THB', name: '泰铢', symbol: '฿' },
+      { code: 'GBP', name: '英镑', symbol: '£' }
+    ];
+
+    function loadSettings() {
+      const settings = getSettings();
+      document.getElementById('tripName').value = settings.tripName || '';
+      document.getElementById('tripDate').value = settings.tripDate || '';
+
+      const cList = document.getElementById('currencyList');
+      cList.innerHTML = currencies.map(c => `
+        <div class="currency-item ${settings.baseCurrency === c.code ? 'active' : ''}" onclick="selectCurrency('${c.code}')">
+          <span class="currency-symbol">${c.symbol}</span>
+          <span class="currency-name">${c.name}</span>
+          ${settings.baseCurrency === c.code ? '<span style="color:#07c160; font-size:18px;">✓</span>' : ''}
+        </div>
+      `).join('');
+
+      loadMembers();
+    }
+
+    let selectedCurrency = getSettings().baseCurrency || 'CNY';
+
+    function selectCurrency(code) {
+      selectedCurrency = code;
+      document.querySelectorAll('.currency-item').forEach(el => {
+        el.classList.remove('active');
+      });
+      event.currentTarget.classList.add('active');
+    }
+
+    function loadMembers() {
+      const members = getMembers();
+      const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'];
+
+      document.getElementById('memberList').innerHTML = members.map((m, i) => `
+        <div class="member-item">
+          <div class="member-avatar" style="background:${colors[i % colors.length]}">${m.name[0]}</div>
+          <span class="member-name">${m.name}</span>
+          ${i > 0 ? `<span class="delete-btn" onclick="deleteMember('${m.id}')">删除</span>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function addMember() {
+      const name = prompt('输入成员姓名：');
+      if (!name) return;
+      const members = getMembers();
+      members.push({ id: Date.now().toString(), name });
+      DB.set('members', members);
+      loadMembers();
+    }
+
+    function deleteMember(id) {
+      if (!confirm('删除后该成员的记账记录将显示为"未知"，确定删除？')) return;
+      const members = getMembers().filter(m => m.id !== id);
+      DB.set('members', members);
+      loadMembers();
+    }
+
+    function saveSettings() {
+      DB.set('settings', [{
+        tripName: document.getElementById('tripName').value,
+        tripDate: document.getElementById('tripDate').value,
+        baseCurrency: selectedCurrency
+      }]);
+      alert('保存成功！');
+    }
+
+    function clearData() {
+      if (!confirm('此操作不可恢复，确定要清空所有账单吗？')) return;
+      DB.clear('bills');
+      DB.clear('members');
+      DB.clear('settings');
+      alert('已清空所有数据');
+      loadSettings();
+    }
+
+    loadSettings();
+  </script>
+</body>
+</html>

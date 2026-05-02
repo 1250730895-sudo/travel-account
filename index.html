@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>旅游记账</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="trip-info">
+      <h1 id="tripName">我的旅行</h1>
+      <p id="tripDate"></p>
+    </div>
+    <div class="total-box">
+      <span class="total-label">总支出</span>
+      <span class="total-amount" id="totalAmount">¥0.00</span>
+    </div>
+  </header>
+
+  <div class="quick-actions">
+    <a href="add.html" class="action-btn">
+      <span class="action-icon">➕</span>
+      <span>记一笔</span>
+    </a>
+    <a href="report.html" class="action-btn">
+      <span class="action-icon">📊</span>
+      <span>报告</span>
+    </a>
+    <button class="action-btn" onclick="shareData()">
+      <span class="action-icon">🔗</span>
+      <span>分享</span>
+    </button>
+  </div>
+
+  <div class="filter-bar">
+    <input type="date" id="filterDate" onchange="loadBills()">
+    <select id="filterCategory" onchange="loadBills()">
+      <option value="">全部类别</option>
+    </select>
+    <select id="filterMember" onchange="loadBills()">
+      <option value="">全部成员</option>
+    </select>
+  </div>
+
+  <div class="bill-list" id="billList">
+    <div class="empty-state">
+      <span class="empty-icon">📝</span>
+      <p>还没有记账哦</p>
+      <p class="sub">点击上方"记一笔"开始记录</p>
+    </div>
+  </div>
+
+  <nav class="tab-bar">
+    <a href="index.html" class="tab-item active">
+      <span>📝</span>
+      <span>账单</span>
+    </a>
+    <a href="statistics.html" class="tab-item">
+      <span>📊</span>
+      <span>统计</span>
+    </a>
+    <a href="aa.html" class="tab-item">
+      <span>🧮</span>
+      <span>AA</span>
+    </a>
+    <a href="settings.html" class="tab-item">
+      <span>⚙️</span>
+      <span>设置</span>
+    </a>
+  </nav>
+
+  <script src="js/app.js"></script>
+  <script>
+    initData();
+
+    const settings = getSettings();
+    document.getElementById('tripName').textContent = settings.tripName;
+    document.getElementById('tripDate').textContent = settings.tripDate || '';
+
+    // 初始化筛选选项
+    const catSelect = document.getElementById('filterCategory');
+    CATEGORIES.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      catSelect.appendChild(opt);
+    });
+
+    const memberSelect = document.getElementById('filterMember');
+    getMembers().forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.name;
+      opt.textContent = m.name;
+      memberSelect.appendChild(opt);
+    });
+
+    function loadBills() {
+      let bills = getBills();
+      const filterDate = document.getElementById('filterDate').value;
+      const filterCat = document.getElementById('filterCategory').value;
+      const filterMember = document.getElementById('filterMember').value;
+
+      if (filterDate) bills = bills.filter(b => b.date === filterDate);
+      if (filterCat) bills = bills.filter(b => b.category === filterCat);
+      if (filterMember) bills = bills.filter(b => b.payer === filterMember || b.members.includes(filterMember));
+
+      const container = document.getElementById('billList');
+
+      if (bills.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <span class="empty-icon">📝</span>
+            <p>没有找到记录</p>
+          </div>`;
+        document.getElementById('totalAmount').textContent = '¥0.00';
+        return;
+      }
+
+      const grouped = {};
+      let totalCNY = 0;
+
+      bills.forEach(bill => {
+        const cat = CATEGORIES.find(c => c.id === bill.category) || CATEGORIES[6];
+        const cny = toCNY(bill.amount, bill.currency);
+        totalCNY += cny;
+
+        if (!grouped[bill.date]) {
+          grouped[bill.date] = { date: bill.date, bills: [], dayTotal: 0 };
+        }
+        grouped[bill.date].bills.push({
+          ...bill,
+          catName: cat.name,
+          catIcon: cat.icon,
+          catColor: cat.color,
+          symbol: CURRENCY_SYMBOLS[bill.currency]
+        });
+        grouped[bill.date].dayTotal += cny;
+      });
+
+      const sorted = Object.values(grouped).sort((a, b) => b.date.localeCompare(a.date));
+
+      let html = '';
+      sorted.forEach(day => {
+        html += `
+          <div class="day-header">
+            <span>${day.date}</span>
+            <span>¥${day.dayTotal.toFixed(2)}</span>
+          </div>`;
+
+        day.bills.forEach(bill => {
+          html += `
+            <div class="bill-item" onclick="location.href='add.html?mode=edit&id=${bill.id}'">
+              <div class="bill-icon" style="background:${bill.catColor}">${bill.catIcon}</div>
+              <div class="bill-info">
+                <div class="bill-top">
+                  <span class="bill-title">${bill.title}</span>
+                  <span class="bill-amount">${bill.symbol}${bill.amount}</span>
+                </div>
+                <div class="bill-bottom">
+                  <span class="tag">${bill.catName}</span>
+                  ${bill.payer ? `<span class="tag green">${bill.payer}付</span>` : ''}
+                  ${bill.members.length > 1 ? `<span class="tag green">${bill.members.length}人分摊</span>` : ''}
+                </div>
+              </div>
+              <button class="delete-btn" onclick="event.stopPropagation(); deleteBill('${bill.id}')">🗑️</button>
+            </div>`;
+        });
+      });
+
+      container.innerHTML = html;
+      document.getElementById('totalAmount').textContent = '¥' + totalCNY.toFixed(2);
+    }
+
+    function deleteBill(id) {
+      if (!confirm('确定删除这条记录？')) return;
+      DB.remove('bills', id);
+      loadBills();
+    }
+
+    function shareData() {
+      const bills = getBills();
+      const total = bills.reduce((sum, b) => sum + toCNY(b.amount, b.currency), 0);
+      const text = `【${settings.tripName}】
+共 ${bills.length} 笔消费
+总计 ¥${total.toFixed(2)}
+
+（复制此消息分享）`;
+
+      if (navigator.share) {
+        navigator.share({ title: '旅游账单', text });
+      } else {
+        const input = document.createElement('textarea');
+        input.value = text;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        alert('账单信息已复制，直接粘贴发给朋友！');
+      }
+    }
+
+    loadBills();
+  </script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>统计 - 旅游记账</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="tab-bar" style="position: relative; margin: 10px; border-radius: 12px;">
+      <div class="tab-item active" onclick="switchTab('category')" id="tab-category">
+        <span>分类</span>
+      </div>
+      <div class="tab-item" onclick="switchTab('trend')" id="tab-trend">
+        <span>趋势</span>
+      </div>
+    </div>
+
+    <div id="category-view">
+      <div class="total-card">
+        <span class="label">总支出</span>
+        <span class="value" id="totalAmount">¥0.00</span>
+        <span class="count" id="totalCount">0 笔消费</span>
+      </div>
+
+      <div class="category-list" id="categoryList"></div>
+    </div>
+
+    <div id="trend-view" style="display:none;">
+      <div class="report-card">
+        <span class="card-title">近7天消费趋势</span>
+        <div class="bar-chart" id="trendChart"></div>
+      </div>
+    </div>
+
+    <div class="empty" id="emptyState" style="display:none;">
+      <span style="font-size:60px; display:block; margin-bottom:15px;">📊</span>
+      <p>暂无数据，快去记一笔吧</p>
+    </div>
+  </div>
+
+  <nav class="tab-bar">
+    <a href="index.html" class="tab-item">
+      <span>📝</span>
+      <span>账单</span>
+    </a>
+    <a href="statistics.html" class="tab-item active">
+      <span>📊</span>
+      <span>统计</span>
+    </a>
+    <a href="aa.html" class="tab-item">
+      <span>🧮</span>
+      <span>AA</span>
+    </a>
+    <a href="settings.html" class="tab-item">
+      <span>⚙️</span>
+      <span>设置</span>
+    </a>
+  </nav>
+
+  <script src="js/app.js"></script>
+  <script>
+    initData();
+    let currentTab = 'category';
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('tab-category').classList.toggle('active', tab === 'category');
+      document.getElementById('tab-trend').classList.toggle('active', tab === 'trend');
+      document.getElementById('category-view').style.display = tab === 'category' ? 'block' : 'none';
+      document.getElementById('trend-view').style.display = tab === 'trend' ? 'block' : 'none';
+    }
+
+    function loadStatistics() {
+      const bills = getBills();
+
+      if (bills.length === 0) {
+        document.getElementById('emptyState').style.display = 'block';
+        document.getElementById('category-view').style.display = 'none';
+        document.getElementById('trend-view').style.display = 'none';
+        return;
+      }
+
+      document.getElementById('emptyState').style.display = 'none';
+
+      // 分类统计
+      const catStats = {};
+      CATEGORIES.forEach(c => catStats[c.id] = { ...c, amount: 0, count: 0 });
+      const dateStats = {};
+      let totalCNY = 0;
+
+      bills.forEach(bill => {
+        const cny = toCNY(bill.amount, bill.currency);
+        totalCNY += cny;
+        if (catStats[bill.category]) {
+          catStats[bill.category].amount += cny;
+          catStats[bill.category].count++;
+        }
+        if (!dateStats[bill.date]) dateStats[bill.date] = 0;
+        dateStats[bill.date] += cny;
+      });
+
+      const categoryData = Object.values(catStats)
+        .filter(c => c.amount > 0)
+        .sort((a, b) => b.amount - a.amount)
+        .map(c => ({...c, percent: Math.round((c.amount / totalCNY) * 100)}));
+
+      document.getElementById('totalAmount').textContent = '¥' + totalCNY.toFixed(2);
+      document.getElementById('totalCount').textContent = bills.length + ' 笔消费';
+
+      const catList = document.getElementById('categoryList');
+      catList.innerHTML = categoryData.map(c => `
+        <div class="category-row">
+          <div style="display:flex; align-items:center; flex:1;">
+            <div class="bill-icon" style="background:${c.color}; margin-right:12px;">${c.icon}</div>
+            <div>
+              <div style="font-size:15px; font-weight:500;">${c.name}</div>
+              <div style="font-size:12px; color:#999;">${c.count} 笔</div>
+            </div>
+          </div>
+          <div style="text-align:right; min-width:100px;">
+            <div style="font-size:16px; font-weight:500;">¥${c.amount.toFixed(2)}</div>
+            <div style="width:80px; height:6px; background:#f0f0f0; border-radius:3px; margin:6px 0; margin-left:auto;">
+              <div style="width:${c.percent}%; height:100%; background:${c.color}; border-radius:3px;"></div>
+            </div>
+            <div style="font-size:12px; color:#999;">${c.percent}%</div>
+          </div>
+        </div>
+      `).join('');
+
+      // 趋势数据
+      const dates = Object.keys(dateStats).sort().slice(-7);
+      const maxAmount = Math.max(...dates.map(d => dateStats[d]), 1);
+
+      document.getElementById('trendChart').innerHTML = dates.map(d => `
+        <div class="bar-item">
+          <div class="bar-wrapper">
+            <div class="bar" style="height:${(dateStats[d] / maxAmount) * 160}px; background:#07c160;"></div>
+          </div>
+          <span class="bar-date">${d.slice(5)}</span>
+          <span class="bar-amount">¥${dateStats[d].toFixed(0)}</span>
+        </div>
+      `).join('');
+    }
+
+    loadStatistics();
+  </script>
+</body>
+</html>

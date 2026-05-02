@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>旅行报告 - 旅游记账</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="report-card">
+      <div class="report-header">
+        <span class="report-title">🧳 <span id="tripName">我的旅行</span></span>
+        <span class="report-date" id="tripDate"></span>
+      </div>
+
+      <div class="report-summary">
+        <div class="summary-item">
+          <span class="summary-number" id="totalCount">0</span>
+          <span class="summary-label">笔消费</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-number" id="memberCount">0</span>
+          <span class="summary-label">人同行</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-number" id="dayCount">0</span>
+          <span class="summary-label">天旅程</span>
+        </div>
+      </div>
+
+      <div style="height:1px; background:#f0f0f0; margin:20px 0;"></div>
+
+      <div style="text-align:center;">
+        <span style="font-size:14px; color:#999; display:block;">总支出</span>
+        <span style="font-size:40px; font-weight:bold; color:#ff6b6b; display:block; margin:10px 0;">¥<span id="totalAmount">0.00</span></span>
+        <span style="font-size:14px; color:#666;">人均 ¥<span id="avgAmount">0.00</span></span>
+      </div>
+    </div>
+
+    <div class="report-card">
+      <span class="card-title">消费分类</span>
+      <div id="categoryChart"></div>
+    </div>
+
+    <div class="report-card">
+      <span class="card-title">每日消费</span>
+      <div id="dailyChart"></div>
+    </div>
+
+    <div class="report-card" id="memberChartCard" style="display:none;">
+      <span class="card-title">成员支出</span>
+      <div class="member-chart" id="memberChart"></div>
+    </div>
+
+    <div class="footer">
+      <p>由 旅游记账 生成</p>
+      <button onclick="shareReport()" style="margin-top:10px; padding:10px 20px; background:#07c160; color:white; border:none; border-radius:8px; font-size:14px;">分享报告</button>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    initData();
+
+    function generateReport() {
+      const bills = getBills();
+      const members = getMembers();
+      const settings = getSettings();
+
+      document.getElementById('tripName').textContent = settings.tripName || '我的旅行';
+      document.getElementById('tripDate').textContent = settings.tripDate || '';
+
+      if (bills.length === 0) {
+        document.getElementById('totalCount').textContent = '0';
+        document.getElementById('memberCount').textContent = members.length;
+        document.getElementById('dayCount').textContent = '0';
+        document.getElementById('totalAmount').textContent = '0.00';
+        document.getElementById('avgAmount').textContent = '0.00';
+        return;
+      }
+
+      const totalCNY = bills.reduce((sum, b) => sum + toCNY(b.amount, b.currency), 0);
+      const dates = [...new Set(bills.map(b => b.date))].sort();
+      const avg = totalCNY / (members.length || 1);
+
+      document.getElementById('totalCount').textContent = bills.length;
+      document.getElementById('memberCount').textContent = members.length;
+      document.getElementById('dayCount').textContent = dates.length;
+      document.getElementById('totalAmount').textContent = totalCNY.toFixed(2);
+      document.getElementById('avgAmount').textContent = avg.toFixed(2);
+
+      // 分类图表
+      const catStats = {};
+      CATEGORIES.forEach(c => catStats[c.id] = { ...c, amount: 0 });
+      bills.forEach(b => {
+        if (catStats[b.category]) catStats[b.category].amount += toCNY(b.amount, b.currency);
+      });
+
+      const catData = Object.values(catStats).filter(c => c.amount > 0).sort((a, b) => b.amount - a.amount);
+      const catTotal = catData.reduce((sum, c) => sum + c.amount, 0);
+
+      document.getElementById('categoryChart').innerHTML = catData.map(c => `
+        <div style="display:flex; align-items:center; margin-bottom:12px; gap:10px;">
+          <div style="width:${Math.max((c.amount / catTotal) * 100, 4)}%; height:36px; background:${c.color}; border-radius:6px; display:flex; align-items:center; padding:0 10px; min-width:40px;">
+            <span style="font-size:18px; margin-right:6px;">${c.icon}</span>
+            <span style="font-size:12px; color:white; font-weight:500;">${c.name}</span>
+          </div>
+          <span style="font-size:13px; color:#666;">${Math.round((c.amount / catTotal) * 100)}%</span>
+        </div>
+      `).join('');
+
+      // 每日图表
+      const dailyStats = {};
+      dates.forEach(d => dailyStats[d] = 0);
+      bills.forEach(b => dailyStats[b.date] += toCNY(b.amount, b.currency));
+      const maxDaily = Math.max(...Object.values(dailyStats));
+
+      document.getElementById('dailyChart').innerHTML = dates.map(d => `
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+          <span style="font-size:12px; color:#999; width:60px;">${d.slice(5)}</span>
+          <div style="flex:1; height:20px; background:#f0f0f0; border-radius:10px; overflow:hidden;">
+            <div style="width:${maxDaily > 0 ? (dailyStats[d] / maxDaily) * 100 : 0}%; height:100%; background:#07c160; border-radius:10px;"></div>
+          </div>
+          <span style="font-size:13px; color:#333; width:70px; text-align:right;">¥${dailyStats[d].toFixed(0)}</span>
+        </div>
+      `).join('');
+
+      // 成员图表
+      if (members.length > 1) {
+        document.getElementById('memberChartCard').style.display = 'block';
+        const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'];
+        const memberPaid = {};
+        members.forEach(m => memberPaid[m.name] = 0);
+        bills.forEach(b => {
+          if (memberPaid[b.payer] !== undefined) memberPaid[b.payer] += toCNY(b.amount, b.currency);
+        });
+        const maxPaid = Math.max(...Object.values(memberPaid), 1);
+
+        document.getElementById('memberChart').innerHTML = members.map((m, i) => `
+          <div class="member-bar-item">
+            <div class="bar-wrapper">
+              <div class="bar" style="height:${(memberPaid[m.name] / maxPaid) * 100}%; background:${colors[i % colors.length]};"></div>
+            </div>
+            <span class="member-bar-name">${m.name}</span>
+            <span class="member-bar-amount">¥${memberPaid[m.name].toFixed(0)}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    function shareReport() {
+      const text = document.querySelector('.report-card').innerText;
+      if (navigator.share) {
+        navigator.share({ title: '旅行账单报告', text });
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        alert('报告内容已复制，可以粘贴分享给朋友！');
+      }
+    }
+
+    generateReport();
+  </script>
+</body>
+</html>
